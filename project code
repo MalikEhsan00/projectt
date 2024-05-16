@@ -1,0 +1,877 @@
+// HEADER FILE
+
+
+
+#pragma once
+
+#include <iostream>
+#include <string>
+#include <iomanip>
+#include <fstream>
+#include <sstream>
+
+using namespace std;
+
+const int MAX_USERS = 100;
+const int MAX_FOLLOWERS = 100;
+const int MAX_REPOSITORIES = 100;
+const int MAX_COMMITS = 100;
+const int MAX_FILES = 100;
+
+class Commit;
+class File;
+class Repository;
+class Tree;
+class User;
+class UserRepository;
+class SocialGraph;
+class UserManager;
+
+
+
+// SOURCE FILE
+
+
+
+#include "github.h"
+
+class Commit {
+private:
+    string message;
+
+public:
+    Commit(string msg) {
+        message = msg;
+    }
+
+    string getMessage() const {
+        return message;
+    }
+};
+
+class File {
+private:
+    string name;
+
+public:
+    File(string filename) {
+        name = filename;
+    }
+
+    string getName() const {
+        return name;
+    }
+};
+
+class Repository {
+private:
+    string name;
+    Commit* commits[MAX_COMMITS];
+    File* files[MAX_FILES];
+    int commitCount;
+    int fileCount;
+
+public:
+    Repository(string repoName) {
+        name = repoName;
+        commitCount = 0;
+        fileCount = 0;
+    }
+
+    string getName() const {
+        return name;
+    }
+
+    bool addCommit(Commit* commit) {
+        if (commitCount < MAX_COMMITS) {
+            commits[commitCount++] = commit;
+            return true;
+        }
+        return false;
+    }
+
+    bool addFile(File* file) {
+        if (fileCount < MAX_FILES) {
+            files[fileCount++] = file;
+            return true;
+        }
+        return false;
+    }
+
+    const Commit** getCommits() const {
+        return (const Commit**)commits;
+    }
+
+    const File** getFiles() const {
+        return (const File**)files;
+    }
+
+    int getCommitCount() const {
+        return commitCount;
+    }
+
+    int getFileCount() const {
+        return fileCount;
+    }
+};
+
+class Tree {
+private:
+    struct TreeNode {
+        Repository* repository;
+        TreeNode* left;
+        TreeNode* right;
+
+        TreeNode(Repository* repo) {
+            repository = repo;
+            left = nullptr;
+            right = nullptr;
+        }
+    };
+
+    TreeNode* root;
+
+    void deleteTree(TreeNode* node) {
+        if (node) {
+            deleteTree(node->left);
+            deleteTree(node->right);
+            delete node->repository;
+            delete node;
+        }
+    }
+
+    void savefile(TreeNode* node, fstream& file) {
+        if (node == nullptr) { return; }
+
+        savefile(node->left, file);
+
+        file << node->repository->getName() << ",";
+        int total_file = node->repository->getFileCount();
+        const File** files = node->repository->getFiles();
+        for (int i = 0; i < total_file; i++)
+        {
+            file << files[i]->getName();
+            if (i + 1 != total_file) {
+                file << ":";
+            }
+        }
+        file << ",";
+        int total_commits = node->repository->getCommitCount();
+        const Commit** commits = node->repository->getCommits();
+        for (int i = 0; i < total_commits; i++)
+        {
+            file << commits[i]->getMessage();
+            if (i + 1 != total_commits) {
+                file << ":";
+            }
+        }
+        file << endl;
+
+        savefile(node->right, file);
+    }
+
+public:
+    Tree() {
+        root = nullptr;
+    }
+
+    ~Tree() {
+        deleteTree(root);
+    }
+
+    bool addRepository(Repository* repository) {
+        TreeNode* newNode = new TreeNode(repository);
+        if (!root) {
+            root = newNode;
+            return true;
+        }
+
+        TreeNode* current = root;
+        TreeNode* parent = nullptr;
+
+        while (current) {
+            parent = current;
+            if (repository->getName() < current->repository->getName()) {
+                current = current->left;
+            }
+            else if (repository->getName() > current->repository->getName()) {
+                current = current->right;
+            }
+            else {
+                delete newNode;
+                return false;
+            }
+        }
+
+        if (repository->getName() < parent->repository->getName()) {
+            parent->left = newNode;
+        }
+        else {
+            parent->right = newNode;
+        }
+
+        return true;
+    }
+
+    Repository* searchRepository(const string& repoName) const {
+        TreeNode* current = root;
+        while (current) {
+            if (repoName == current->repository->getName()) {
+                return current->repository;
+            }
+            else if (repoName < current->repository->getName()) {
+                current = current->left;
+            }
+            else {
+                current = current->right;
+            }
+        }
+        return nullptr;
+    }
+
+    void SaveData() {
+        fstream file;
+
+        file.open("TreeSaveFile.csv", ios::out);
+        if (!file.is_open()) { cout << "File: Error\n"; return; }
+
+        savefile(root, file);
+
+        file.close();
+    }
+    void LoadData() {
+        fstream file;
+        file.open("TreeSaveFile.csv", ios::in);
+        if (!file.is_open()) { cout << "File: Error\n"; return; }
+
+        string line;
+        while (getline(file, line)) {
+            stringstream ss, ssfile, sscommit;
+            string repos, all_files, file_name, all_commits, commit_msg;
+            ss << line;
+            try
+            {
+                getline(ss, repos, ',');
+                Repository* repo = new Repository(repos);
+                this->addRepository(repo);
+
+                getline(ss, all_files, ',');
+                ssfile << all_files;
+                while (getline(ssfile, file_name, ':')) {
+                    File* add_file = new File(file_name);
+                    repo->addFile(add_file);
+                }
+                getline(ss, all_commits);
+                sscommit << all_commits;
+                while (getline(sscommit, commit_msg, ':')) {
+                    Commit* add_commit = new Commit(commit_msg);
+                    repo->addCommit(add_commit);
+                }
+            }
+            catch (const std::exception& ex)
+            {
+                cout << ex.what();
+            }
+        }
+
+        file.close();
+    }
+
+};
+
+class User {
+private:
+    string username;
+    string password;
+    string followers[MAX_FOLLOWERS];
+    int followerCount;
+
+public:
+    User() {
+        username = "";
+        password = "";
+        followerCount = 0;
+    }
+
+    User(string uname, string pwd) {
+        username = uname;
+        password = pwd;
+        followerCount = 0;
+    }
+
+    string getUsername() const {
+        return username;
+    }
+
+    string getPassword() const {
+        return password;
+    }
+
+    const string* getFollowers() const {
+        return followers;
+    }
+
+    int getFollowerCount() const {
+        return followerCount;
+    }
+
+    bool addFollower(const string& follower) {
+        if (followerCount < MAX_FOLLOWERS) {
+            followers[followerCount++] = follower;
+            return true;
+        }
+        return false;
+    }
+
+    bool removeFollower(const string& follower) {
+        for (int i = 0; i < followerCount; ++i) {
+            if (followers[i] == follower) {
+                for (int j = i; j < followerCount - 1; ++j) {
+                    followers[j] = followers[j + 1];
+                }
+                followerCount--;
+                return true;
+            }
+        }
+        return false;
+    }
+
+};
+
+class UserRepository {
+private:
+    string name;
+    string commits[MAX_FOLLOWERS];
+    string files[MAX_FOLLOWERS];
+    int commitCount;
+    int fileCount;
+
+public:
+    UserRepository(string repoName) {
+        repoName = name;
+        commitCount = 0;
+        fileCount = 0;
+    }
+
+    string getName() const {
+        return name;
+    }
+
+    const string* getCommits() const {
+        return commits;
+    }
+
+    const string* getFiles() const {
+        return files;
+    }
+
+    int getCommitCount() const {
+        return commitCount;
+    }
+
+    int getFileCount() const {
+        return fileCount;
+    }
+
+    bool addCommit(const string& commit) {
+        if (commitCount < MAX_FOLLOWERS) {
+            commits[commitCount++] = commit;
+            return true;
+        }
+        return false;
+    }
+
+    bool addFile(const string& file) {
+        if (fileCount < MAX_FOLLOWERS) {
+            files[fileCount++] = file;
+            return true;
+        }
+        return false;
+    }
+};
+
+class SocialGraph {
+private:
+    string users[MAX_USERS];
+    int userCount;
+    int followMatrix[MAX_USERS][MAX_USERS];
+
+public:
+    SocialGraph() : userCount(0) {
+        for (int i = 0; i < MAX_USERS; ++i) {
+            for (int j = 0; j < MAX_USERS; ++j) {
+                followMatrix[i][j] = 0;
+            }
+        }
+    }
+
+    bool addUser(const string& username) {
+        if (userCount < MAX_USERS) {
+            users[userCount++] = username;
+            return true;
+        }
+        return false;
+    }
+
+    bool followUser(int followerIndex, int followeeIndex) {
+        if (followerIndex < userCount && followeeIndex < userCount) {
+            followMatrix[followerIndex][followeeIndex] = 1;
+            return true;
+        }
+        return false;
+    }
+
+    bool unfollowUser(int followerIndex, int followeeIndex) {
+        if (followerIndex < userCount && followeeIndex < userCount) {
+            followMatrix[followerIndex][followeeIndex] = 0;
+            return true;
+        }
+        return false;
+    }
+
+    const string* getUsernames() const {
+        return users;
+    }
+
+    int getUserCount() const {
+        return userCount;
+    }
+
+    const int* getFollowMatrix() const {
+        return *followMatrix;
+    }
+
+    void SaveData() {
+        fstream file;
+        file.open("MatrixSaveFile.csv", ios::out);
+        if (!file.is_open()) { cout << "File: Error\n"; return; }
+
+        for (int i = 0; i < MAX_USERS; i++)
+        {
+            for (int j = 0; j < MAX_USERS; j++)
+            {
+                file << followMatrix[i][j];
+                if (j + 1 != MAX_USERS) {
+                    file << ",";
+                }
+            }
+            file << endl;
+        }
+
+        file.close();
+    }
+
+    void LoadData(User* users, int user_count) {
+        for (int i = 0; i < user_count; i++) {
+            this->addUser(users[i].getUsername());
+        }
+
+        fstream file;
+        file.open("MatrixSaveFile.csv", ios::in);
+        if (!file.is_open()) { cout << "File: Error\n"; return; }
+        stringstream ss, matrix_line;
+        string line, status;
+        int i = 0, j;
+        while (getline(file, line)) {
+            ss << line;
+            i++;
+            j = 0;
+            while (getline(ss, status, ',')) {
+                j++;
+                if (status == "1") {
+                    followMatrix[i][j] = 1;
+                }
+            }
+        }
+
+        file.close();
+    }
+};
+
+class UserManager {
+private:
+    User users[MAX_USERS];
+    int userCount;
+
+public:
+    UserManager() {
+        userCount = 0;
+        for (int i = 0; i < MAX_USERS; ++i) {
+            users[i] = User();
+        }
+    }
+
+    User* getUsers() {
+        return users;
+    }
+
+    int getUserCount() {
+        return userCount;
+    }
+
+    bool registerUser(const string& username, const string& password) {
+        if (userCount < MAX_USERS) {
+            users[userCount++] = User(username, password);
+            return true;
+        }
+        return false;
+    }
+
+    User* loginUser(const string& username, const string& password) {
+        for (int i = 0; i < userCount; ++i) {
+            if (users[i].getUsername() == username && users[i].getPassword() == password) {
+                return &users[i];
+            }
+        }
+        return nullptr;
+    }
+
+    User* getUser(const string& username) {
+        for (int i = 0; i < userCount; ++i) {
+            if (users[i].getUsername() == username) {
+                return &users[i];
+            }
+        }
+        return nullptr;
+    }
+
+    void SaveData() {
+        fstream file;
+        file.open("UserAccountData.csv", ios::out);
+        if (!file.is_open()) { cout << "File: Error\n"; return; }
+
+        for (int i = 0; i < userCount; i++) {
+            file << users[i].getUsername() << "," << users[i].getPassword() << ",";
+            int followers = users[i].getFollowerCount();
+            const string* followers_list = users[i].getFollowers();
+            for (int j = 0; j < followers; j++) {
+                file << followers_list[j];
+                if (j + 1 != followers) {
+                    file << ":";
+                }
+            }
+            file << endl;
+        }
+
+        file.close();
+    }
+
+    void LoadData() {
+        fstream file;
+        file.open("UserAccountData.csv", ios::in);
+        if (!file.is_open()) { cout << "File: Error\n"; return; }
+
+        string line;
+
+        while (getline(file, line)) {
+            stringstream ss;
+            ss << line;
+            string username, password;
+            getline(ss, username, ',');
+            getline(ss, password, ',');
+            this->registerUser(username, password);
+
+            string followers_list, follower_name;
+            stringstream ssfollower;
+
+            getline(ss, followers_list);
+            ssfollower << followers_list;
+            while (getline(ssfollower, follower_name, ':')) {
+                this->getUser(username)->addFollower(follower_name);
+            }
+        }
+        file.close();
+    }
+
+};
+
+
+
+// MAIN FILE
+
+
+
+#include "github.h"
+#include "source.cpp"
+
+int main() {
+    UserManager userManager;
+    SocialGraph socialGraph;
+    Tree repositoryTree;
+
+    repositoryTree.LoadData();
+    userManager.LoadData();
+    socialGraph.LoadData(userManager.getUsers(), userManager.getUserCount());
+
+    while (true) {
+        system("CLS");
+        cout << "\t\t\t-------------------------------------------\n";
+        cout << setw(20) << left << "" << "\t\t\tGITHUB MENU" << endl;
+        cout << "\t\t\t-------------------------------------------\n";
+        cout << "\t\t\t1. Create Account" << endl;
+        cout << "\t\t\t2. Login" << endl;
+        cout << "\t\t\t3. View Profile" << endl;
+        cout << "\t\t\t4. Follow User" << endl;
+        cout << "\t\t\t5. Unfollow User" << endl;
+        cout << "\t\t\t6. Create Repository" << endl;
+        cout << "\t\t\t7. Add Commit" << endl;
+        cout << "\t\t\t8. Add File" << endl;
+        cout << "\t\t\t9. View Repository Details" << endl;
+        cout << "\t\t\t10. Exit" << endl;
+        cout << "\t\t\t-------------------------------------------\n";
+        cout << "\t\t\tChoose an option: ";
+        int choice;
+        cin >> choice;
+
+        if (choice == 1) {
+            system("CLS");
+            cout << "\t\t\t-------------------------------------------\n";
+            cout << setw(20) << left << "" << "\t\t\tACCOUNT SIGNUP" << endl;
+            cout << "\t\t\t-------------------------------------------\n";
+            string username, password;
+            cout << "\n\t\t\tEnter username: ";
+            cin >> username;
+            cout << "\t\t\tEnter password: ";
+            cin >> password;
+            if (userManager.registerUser(username, password)) {
+                cout << "\n\t\t\tACCOUNT CREATED!" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+                socialGraph.addUser(username);
+            }
+            else {
+                cout << "UNABLE TO CREATE AN ACCOUNT!" << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+        }
+        else if (choice == 2) {
+            system("CLS");
+            cout << "\t\t\t-------------------------------------------\n";
+            cout << setw(20) << left << "" << "\t\t\tACCOUNT LOGIN" << endl;
+            cout << "\t\t\t-------------------------------------------\n";
+            string username, password;
+            cout << "\n\t\t\tEnter username: ";
+            cin >> username;
+            cout << "\t\t\tEnter password: ";
+            cin >> password;
+            User* loggedInUser = userManager.loginUser(username, password);
+            if (loggedInUser) {
+                cout << "\n\t\t\tLOGIN SUCCESSFUL!" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+            else {
+                cout << "\n\t\t\tINVALID USERNAME OR PASSWORD! TRY AGAIN" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+        }
+        else if (choice == 3) {
+            system("CLS");
+            cout << "\t\t\t-------------------------------------------\n";
+            cout << setw(20) << left << "" << "\t\t\tYOUR PROFILE" << endl;
+            cout << "\t\t\t-------------------------------------------\n";
+            string username;
+            cout << "\n\t\t\tEnter username: ";
+            cin >> username;
+            User* userProfile = userManager.getUser(username);
+            if (userProfile) {
+                cout << "\n\t\t\tUsername: " << userProfile->getUsername() << endl;
+                cout << "\n\t\t\tFollowers:" << endl;
+                const string* followers = userProfile->getFollowers();
+                for (int i = 0; i < userProfile->getFollowerCount(); ++i) {
+                    cout << "\t\t\t- " << followers[i] << endl << endl;
+                }
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+            else {
+                cout << "\n\t\t\tUSER NOT FOUND" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+        }
+        else if (choice == 4) {
+            system("CLS");
+            cout << "\t\t\t-------------------------------------------\n";
+            cout << setw(20) << left << "" << "\t\t\tFOLLOW ACCOUNTS" << endl;
+            cout << "\t\t\t-------------------------------------------\n";
+            string followerName, followeeName;
+            cout << "\n\t\t\tEnter your username: ";
+            cin >> followerName;
+            cout << "\t\t\tFollow: ";
+            cin >> followeeName;
+            int followerIndex = -1, followeeIndex = -1;
+            for (int i = 0; i < socialGraph.getUserCount(); ++i) {
+                if (socialGraph.getUsernames()[i] == followerName) {
+                    followerIndex = i;
+                }
+                if (socialGraph.getUsernames()[i] == followeeName) {
+                    followeeIndex = i;
+                }
+            }
+            if (followerIndex != -1 && followeeIndex != -1) {
+                if (socialGraph.followUser(followerIndex, followeeIndex)) {
+                    cout << "\n\t\t\tYou are now following " << followeeName << "." << endl << endl;
+                    cout << "\t\t\t-------------------------------------------\n";
+                    userManager.getUser(followeeName)->addFollower(followerName);
+                }
+                else {
+                    cout << "\n\t\t\tFAILED TO FOLLOW USER! TRY AGAIN" << endl << endl;
+                    cout << "\t\t\t-------------------------------------------\n";
+                }
+            }
+            else {
+                cout << "\n\t\t\tINVALID USERNAME! TRY AGAIN" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+        }
+        else if (choice == 5) {
+            system("CLS");
+            cout << "\t\t\t-------------------------------------------\n";
+            cout << setw(20) << left << "" << "\t\t\tUNFOLLOW ACCOUNTS" << endl;
+            cout << "\t\t\t-------------------------------------------\n";
+            string followerName, followeeName;
+            cout << "\n\t\t\tEnter your username: ";
+            cin >> followerName;
+            cout << "\t\t\tUnfollow: ";
+            cin >> followeeName;
+            int followerIndex = -1, followeeIndex = -1;
+            for (int i = 0; i < socialGraph.getUserCount(); ++i) {
+                if (socialGraph.getUsernames()[i] == followerName) {
+                    followerIndex = i;
+                }
+                if (socialGraph.getUsernames()[i] == followeeName) {
+                    followeeIndex = i;
+                }
+            }
+            if (followerIndex != -1 && followeeIndex != -1) {
+                if (socialGraph.unfollowUser(followerIndex, followeeIndex)) {
+                    cout << "\n\t\t\tYou have unfollowed " << followeeName << "." << endl << endl;
+                    cout << "\t\t\t-------------------------------------------\n";
+                    userManager.getUser(followeeName)->removeFollower(followerName);
+                }
+                else {
+                    cout << "\n\t\t\tFAILED TO UNFOLLOW USER! TRY AGAIN" << endl << endl;
+                    cout << "\t\t\t-------------------------------------------\n";
+                }
+            }
+            else {
+                cout << "\n\t\t\tINVALID USERNAME! TRY AGAIN" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+        }
+
+        else if (choice == 6) {
+            system("CLS");
+            cout << "\t\t\t-------------------------------------------\n";
+            cout << setw(20) << left << "" << "\t\t\tCREATE REPOSITORY" << endl;
+            cout << "\t\t\t-------------------------------------------\n";
+            string repoName;
+            cout << "\n\t\t\tEnter repository name: ";
+            cin >> repoName;
+            Repository* newRepo = new Repository(repoName);
+            if (repositoryTree.addRepository(newRepo)) {
+                cout << "\n\t\t\tREPOSITORY CREATED!" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+            else {
+                cout << "\n\t\t\tSAME NAME ALREADY EXISTS!" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+                delete newRepo;
+            }
+        }
+        else if (choice == 7) {
+            system("CLS");
+            cout << "\t\t\t-------------------------------------------\n";
+            cout << setw(20) << left << "" << "\t\t\tADD COMMIT" << endl;
+            cout << "\t\t\t-------------------------------------------\n";
+            string repoName, commitMessage;
+            cout << "\n\t\t\tEnter repository name: ";
+            cin >> repoName;
+            Repository* repo = repositoryTree.searchRepository(repoName);
+            if (repo) {
+                cout << "\t\t\tEnter commit message: ";
+                cin.ignore();
+                getline(cin, commitMessage);
+                Commit* newCommit = new Commit(commitMessage);
+                if (repo->addCommit(newCommit)) {
+                    cout << "\n\t\t\tCOMMIT ADDED!" << endl << endl;
+                    cout << "\t\t\t-------------------------------------------\n";
+                }
+                else {
+                    cout << "\n\t\t\tFAILED TO ADD COMMIT! TRY AGAIN" << endl << endl;
+                    cout << "\t\t\t-------------------------------------------\n";
+                    delete newCommit;
+                }
+            }
+            else {
+                cout << "\n\t\t\tREPOSITORY NOT FOUND!" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            };
+        }
+        else if (choice == 8) {
+            system("CLS");
+            cout << "\t\t\t-------------------------------------------\n";
+            cout << setw(20) << left << "" << "\t\t\tADD FILE" << endl;
+            cout << "\t\t\t-------------------------------------------\n";
+            string repoName, fileName;
+            cout << "\n\t\t\tEnter repository name: ";
+            cin >> repoName;
+            Repository* repo = repositoryTree.searchRepository(repoName);
+            if (repo) {
+                cout << "\t\t\tEnter file name: ";
+                cin >> fileName;
+                File* newFile = new File(fileName);
+                if (repo->addFile(newFile)) {
+                    cout << "\n\t\t\tFILE ADDED!" << endl << endl;
+                    cout << "\t\t\t-------------------------------------------\n";
+                }
+                else {
+                    cout << "\n\t\t\tFAILED TO ADD FILE!" << endl << endl;
+                    cout << "\t\t\t-------------------------------------------\n";
+                    delete newFile;
+                }
+            }
+            else {
+                cout << "\n\t\t\tREPOSITORY NOT FOUND!" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+        }
+        else if (choice == 9) {
+            system("CLS");
+            cout << "\t\t\t-------------------------------------------\n";
+            cout << setw(20) << left << "" << "\t\t\tYOUR REPOSITORY" << endl;
+            cout << "\t\t\t-------------------------------------------\n";
+            string repoName;
+            cout << "\n\t\t\tEnter repository name: ";
+            cin >> repoName;
+            Repository* repo = repositoryTree.searchRepository(repoName);
+            if (repo) {
+                cout << "\n\t\t\tRepository Name: " << repo->getName() << endl;
+                cout << "\n\t\t\tCommits:" << endl;
+                const Commit** commits = repo->getCommits();
+                for (int i = 0; i < repo->getCommitCount(); ++i) {
+                    cout << "\t\t\t- " << commits[i]->getMessage() << endl;
+                }
+                cout << "\n\t\t\tFiles:" << endl;
+                const File** files = repo->getFiles();
+                for (int i = 0; i < repo->getFileCount(); ++i) {
+                    cout << "\t\t\t- " << files[i]->getName() << endl << endl;
+                }
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+            else {
+                cout << "\n\t\t\tREPOSITORY NOT FOUND!" << endl << endl;
+                cout << "\t\t\t-------------------------------------------\n";
+            }
+        }
+        else if (choice == 10) {
+            cout << "\t\t\tEXITING" << endl << endl;
+            repositoryTree.SaveData();
+            socialGraph.SaveData();
+            userManager.SaveData();
+            system("PAUSE");
+            return 0;
+        }
+        else {
+            cout << "\t\t\tINVALID OPTION! TRY AGAIN" << endl << endl;
+        }
+        system("PAUSE");
+    }
+}
