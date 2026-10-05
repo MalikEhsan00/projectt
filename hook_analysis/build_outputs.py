@@ -92,9 +92,10 @@ sf = ["basis","hook_type","videos","total_gmv","avg_gmv_per_video","total_items_
 summ = rollup("transcript_only", [v for v in vids if v["label_source"] == "transcript"]) + rollup("all_videos", vids)
 write("hook_summary.csv", sf, summ)
 
-# 3) top 3 per hook by GMV, WITH url (all videos; label_source shows how each was labelled)
+# 3) top 3 per hook by GMV, WITH url (transcript-labelled videos only)
 groups = {}
-for v in vids: groups.setdefault(v["hook_type"], []).append(v)
+for v in vids:
+    if v["label_source"] == "transcript": groups.setdefault(v["hook_type"], []).append(v)
 top = []
 for h in sorted(groups, key=lambda h: (h == "Other", -sum(x["gmv"] for x in groups[h]))):
     for rank, v in enumerate(sorted(groups[h], key=lambda x: -x["gmv"])[:3], 1):

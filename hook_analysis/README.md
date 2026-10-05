@@ -6,7 +6,7 @@ Run: `python3 build_outputs.py <creator_video.csv>` (needs `manual_labels.txt`, 
 |---|---|
 | `hook_labels_and_metrics.csv` | every video (9,563): hook label + GMV / views / likes / comments / engagement. **No URLs.** |
 | `hook_summary.csv` | per-hook totals, averages and ranks (GMV, views, engagement rate) |
-| `top3_videos_per_hook.csv` | top 3 videos per hook by GMV (`Video Revenue`), **with URL** |
+| `top3_videos_per_hook.csv` | top 3 transcript-labelled videos per hook by GMV (`Video Revenue`), **with URL** |
 
 - Hook = first ~9 words (first-sentence tie-break rules from the guide applied by hand) of the transcript (~3 s of speech). GMV = `Video Revenue`.
 - Only 873 of 9,563 rows have a transcript. The other 8,690 are labelled from the video **caption** (`Description`, hashtags and disclaimers stripped) using keyword rules in `caption_rules.py` (6,437 rows). 2,253 rows have neither transcript nor caption text and are `Other`. `label_source` says which one was used.
