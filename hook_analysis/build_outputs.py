@@ -5,18 +5,15 @@ manual_labels.txt = one code per video that has a transcript, in CSV row order.
 """
 import csv, re, sys, os
 
-CODES = {
-    "Q": "Question",
+CODES = {  # names/definitions from ../tiktok_hook_types.md
     "P": "Problem / Pain Point",
-    "C": "Curiosity / Open Loop",
-    "B": "Bold Claim / Benefit",
-    "S": "Shock / Warning / Pattern Interrupt",
-    "T": "Social Proof / Testimonial",
-    "V": "Personal Story / POV",
-    "O": "Offer / Deal / Urgency",
-    "D": "Demo / Product Intro",
-    "A": "Direct Audience Call-Out",
-    "X": "Other / No Clear Hook",
+    "C": "Curiosity Gap",
+    "S": "Social Proof / Results",
+    "B": "Bold / Shocking Claim",
+    "Q": "Direct Question",
+    "V": "Story / Personal Experience",
+    "O": "Offer / Urgency",
+    "X": "Other",
 }
 NO_TRANSCRIPT = "No Transcript"
 here = os.path.dirname(os.path.abspath(__file__))
@@ -47,6 +44,9 @@ for r in rows:
         likes=int(float(r["Likes Count"] or 0)),
         comments=int(float(r["Comments Count"] or 0)),
     )
+    if v["hook_type"] == "Other":
+        v["other_reason"] = ("no spoken hook / sound only" if re.match(r"^[\(\[]|^:?\d|^\W*$", v["hook_first_3s"]) or len(v["hook_first_3s"].split()) <= 2
+                             else "product intro / demo / mild benefit statement, no hook technique")
     v["engagements"] = v["likes"] + v["comments"]
     v["engagement_rate_pct"] = round(100 * v["engagements"] / v["views"], 3) if v["views"] else 0
     vids.append(v)
@@ -57,7 +57,7 @@ def write(name, fields, data):
         w.writeheader(); w.writerows(data)
 
 # 1) every video, labelled, NO url
-lab_fields = ["video_id","creator","date","hook_first_3s","hook_type","gmv","items_sold","views","likes","comments","engagements","engagement_rate_pct"]
+lab_fields = ["video_id","creator","date","hook_first_3s","hook_type","other_reason","gmv","items_sold","views","likes","comments","engagements","engagement_rate_pct"]
 write("hook_labels_and_metrics.csv", lab_fields, vids)
 
 # 2) per-hook rollup
@@ -72,7 +72,7 @@ for h, g in groups.items():
         total_likes=sum(x["likes"] for x in g), total_comments=sum(x["comments"] for x in g),
         total_engagements=eng, engagement_rate_pct=round(100*eng/views,3) if views else 0,
         gmv_per_1k_views=round(1000*gmv/views,2) if views else 0))
-real = [s for s in summ if s["hook_type"] != NO_TRANSCRIPT]
+real = [s for s in summ if s["hook_type"] not in (NO_TRANSCRIPT, "Other")]  # ranks cover named hooks only
 for key, col in [("gmv","total_gmv"),("gmv_avg","avg_gmv_per_video"),("views","total_views"),("views_avg","avg_views_per_video"),("eng_rate","engagement_rate_pct")]:
     ranked = sorted(real, key=lambda s: -s[col])
     for i, s in enumerate(ranked, 1): s[f"rank_{key}"] = i
