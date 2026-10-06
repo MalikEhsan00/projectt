@@ -34,8 +34,9 @@ SWING = {  # one high-ceiling alternative per type
 rows = []
 for r in csv.DictReader(open(os.path.join(here, "creator_type_assignments.csv"), encoding="utf-8")):
     if only and r["creator"] not in only: continue
+    if "http" in r["creator"] or "www." in r["creator"]: continue  # malformed handle in the export
     own = best.get(r["creator"])
-    style = (f"your best past hook was \"{own[1]}\" ({own[2]}). Keep that voice." if own
+    style = (f"tone reference only (your best past hook): \"{own[1]}\" ({own[2]}). Match the energy, not the words." if own
              else "no clear past hook found; use your natural voice.")
     out = tpl[r["brief_type"]].format(
         creator=r["creator"], product=cfg["product"], style_line=style,
