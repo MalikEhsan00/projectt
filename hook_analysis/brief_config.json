@@ -1,0 +1,14 @@
+{
+  "product": "Autobrush Sonic Pro Kids Bundle",
+  "selling_points": [
+    "full-mouth clean in 30 seconds",
+    "ADA-accepted U-shaped design",
+    "music + LED lights make kids want to brush"
+  ],
+  "deal": {
+    "active": false,
+    "text": "triple discount",
+    "deadline": "ends tonight"
+  },
+  "cta": "tap the basket"
+}
